@@ -1,0 +1,5 @@
+cron:
+- description: "Check GCE operations, if new event happened send mail"
+  url: /cron/operations
+  schedule: every 5 mins
+  target: default
