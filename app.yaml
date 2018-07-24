@@ -1,0 +1,20 @@
+runtime: go
+api_version: go1
+
+env: standard
+service: default
+threadsafe: false
+instance_class: F1
+handlers:
+  - url: /cron/worker/.*
+    script: _go_app
+    login: admin
+
+  - url: '/.*'
+    script: _go_app
+
+env_variables:
+  PROJECT_IDS: "<YOUR_PROJECT_ID_1>,<YOUR_PROJECT_ID_2>"
+  OPERATION_FILTER: operationType="compute.instances.migrateOnHostMaintenance" OR operationType="compute.instances.hostError"
+  TO: "<YOUR_EMAIL_1>,<YOUR_EMAIL_2>"
+  TIMEZONE: "Asia/Taipei"

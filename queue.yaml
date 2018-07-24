@@ -1,0 +1,4 @@
+queue:
+- name: get-operations
+  rate: 5/s
+  target: default
