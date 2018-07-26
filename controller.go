@@ -1,26 +1,18 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/appengine"
-	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/taskqueue"
 	"google.golang.org/appengine/urlfetch"
-)
-
-// GAEEntityKind is for GAE Entity kind
-const (
-	GAEEntityKind = "GCEOperations"
 )
 
 func errorHandler(w http.ResponseWriter, r *http.Request, status int) {
@@ -71,71 +63,14 @@ func workHandle(w http.ResponseWriter, r *http.Request) {
 		log.Errorf(ctx, "compute error: %s", err)
 	}
 
-	projects := getProjectIDs()
-	aggregatedList := make(map[string][]*compute.Operation)
-
-	for _, project := range projects {
-		aggregatedListTemp := gceUnkownAggregatedList(ctx, computeService, project)
-		for key, value := range aggregatedListTemp {
-			aggregatedList[key] = append(aggregatedList[key], value...)
-		}
+	outputOperations := OutputOperations{
+		Ctx:            ctx,
+		ComputeService: computeService,
+		Projects:       getProjectIDs(),
+		Itmes:          make(map[string][]*OutputOperation),
 	}
-
-	for operationType, operationList := range aggregatedList {
-		if len(operationList) > 0 {
-			mail := Mail{
-				Ctx:           ctx,
-				OperationType: operationType,
-				Operations:    operationList,
-			}
-			mail.Send()
-		}
-	}
-}
-
-func gceUnkownAggregatedList(ctx context.Context, computeService *compute.Service, project string) (unkownAggregatedList map[string][]*compute.Operation) {
-	unkownAggregatedListTemp := make(map[string][]*compute.Operation)
-	req := computeService.GlobalOperations.AggregatedList(project)
-	req = req.Filter(os.Getenv("OPERATION_FILTER"))
-
-	if err := req.Pages(ctx, func(page *compute.OperationAggregatedList) error {
-		for _, operationsScopedList := range page.Items {
-			if len(operationsScopedList.Operations) > 0 {
-				for _, operation := range operationsScopedList.Operations {
-					log.Infof(ctx, "id: %d, target %s", operation.Id, operation.TargetLink)
-					if getOrPutDatastore(ctx, operation) {
-						unkownAggregatedListTemp[operation.OperationType] = append(unkownAggregatedListTemp[operation.OperationType], operation)
-					}
-				}
-			}
-		}
-		return nil
-	}); err != nil {
-		log.Errorf(ctx, "compute error: %s", err)
-	}
-	return unkownAggregatedListTemp
-}
-
-func getOrPutDatastore(ctx context.Context, operation *compute.Operation) (newDatastore bool) {
-	newDatastore = false
-	datastoreObject := OutputOperation{}
-	datastoreKey := datastore.NewKey(ctx, GAEEntityKind, strconv.FormatUint(operation.Id, 10), 0, nil)
-
-	if err := datastore.Get(ctx, datastoreKey, &datastoreObject); err != nil {
-		log.Errorf(ctx, "datastore %s", err)
-		if err.Error() == "datastore: no such entity" {
-			putDatasotreObject := OutputOperation{
-				TargetLink:    operation.TargetLink,
-				OperationType: operation.OperationType,
-			}
-			if _, putErr := datastore.Put(ctx, datastoreKey, &putDatasotreObject); putErr != nil {
-				log.Errorf(ctx, "datastore %s", putErr)
-			}
-			newDatastore = true
-		}
-	}
-
-	return
+	outputOperations.GetGceUnkownAggregatedList()
+	outputOperations.SendMail()
 }
 
 func getProjectIDs() (projectIDs []string) {
