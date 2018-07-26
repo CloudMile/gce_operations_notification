@@ -6,22 +6,15 @@ import (
 	"strings"
 	"time"
 
-	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/mail"
 )
-
-// OutputOperation for operation
-type OutputOperation struct {
-	OperationType string
-	TargetLink    string
-}
 
 // Mail for send mail
 type Mail struct {
 	Ctx           context.Context
 	OperationType string
-	Operations    []*compute.Operation
+	Operations    []*OutputOperation
 }
 
 // Send will send mail
