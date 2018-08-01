@@ -20,6 +20,7 @@ Create a new project
 - app.yaml
   - change `PROJECT_IDS` to you want to follow
   - change `TO` to you want to send
+  - choose `DATABASE` to you want to use, you can choes GCP `datastore` or GAE `memcache`
 - cron.yaml
   - change schedule for Period
 

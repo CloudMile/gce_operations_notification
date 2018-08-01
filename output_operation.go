@@ -3,10 +3,8 @@ package app
 import (
 	"context"
 	"os"
-	"strconv"
 
 	compute "google.golang.org/api/compute/v1"
-	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/log"
 )
 
@@ -28,13 +26,22 @@ type OutputOperations struct {
 
 // GetGceUnkownAggregatedList get AggregatedList from API
 func (outO *OutputOperations) GetGceUnkownAggregatedList() {
-	for _, project := range outO.Projects {
-		aggregatedListTemp := gceUnkownAggregatedList(outO.Ctx, outO.ComputeService, project)
+	var c = make(chan bool, len(outO.Projects))
 
-		for key, value := range aggregatedListTemp {
-			log.Infof(outO.Ctx, "key: %s", key)
-			outO.Itmes[key] = append(outO.Itmes[key], value...)
-		}
+	for _, project := range outO.Projects {
+		go func(project string) {
+			aggregatedListTemp := gceUnkownAggregatedList(outO.Ctx, outO.ComputeService, project)
+
+			for key, value := range aggregatedListTemp {
+				log.Infof(outO.Ctx, "key: %s", key)
+				outO.Itmes[key] = append(outO.Itmes[key], value...)
+			}
+			c <- true
+		}(project)
+	}
+
+	for range outO.Projects {
+		<-c
 	}
 }
 
@@ -58,13 +65,23 @@ func gceUnkownAggregatedList(ctx context.Context, computeService *compute.Servic
 	req = req.Filter(os.Getenv("OPERATION_FILTER"))
 
 	if err := req.Pages(ctx, func(page *compute.OperationAggregatedList) error {
-		for _, operationsScopedList := range page.Items {
-			lenOperationsScopedListOperations := len(operationsScopedList.Operations)
+		var c = make(chan bool, len(page.Items))
 
-			if lenOperationsScopedListOperations > 0 {
-				unkownAggregatedList = multiCheckOperation(ctx, lenOperationsScopedListOperations, operationsScopedList)
-			}
+		for _, operationsScopedList := range page.Items {
+			go func(operationsScopedList compute.OperationsScopedList) {
+				lenOperationsScopedListOperations := len(operationsScopedList.Operations)
+
+				if lenOperationsScopedListOperations > 0 {
+					unkownAggregatedList = multiCheckOperation(ctx, lenOperationsScopedListOperations, operationsScopedList)
+				}
+				c <- true
+			}(operationsScopedList)
 		}
+
+		for range page.Items {
+			<-c
+		}
+
 		return nil
 	}); err != nil {
 		log.Errorf(ctx, "compute error: %s", err)
@@ -79,7 +96,7 @@ func multiCheckOperation(ctx context.Context, arrayLen int, operationsScopedList
 	for _, operation := range operationsScopedList.Operations {
 		go func(operation *compute.Operation) {
 			log.Infof(ctx, "id: %d, target %s", operation.Id, operation.TargetLink)
-			isNew, outputOperation := getOrPutDatastore(ctx, operation)
+			isNew, outputOperation := getOrPut(ctx, operation)
 			if isNew {
 				unkownAggregatedList[operation.OperationType] = append(unkownAggregatedList[operation.OperationType], &outputOperation)
 			}
@@ -92,23 +109,20 @@ func multiCheckOperation(ctx context.Context, arrayLen int, operationsScopedList
 	return
 }
 
-func getOrPutDatastore(ctx context.Context, operation *compute.Operation) (newDatastore bool, datastoreObject OutputOperation) {
-	newDatastore = false
-	datastoreKey := datastore.NewKey(ctx, GAEEntityKind, strconv.FormatUint(operation.Id, 10), 0, nil)
+func getOrPut(ctx context.Context, operation *compute.Operation) (bool, OutputOperation) {
+	dbMap := map[string]database{
+		"datastore": GCPDatastore{Ctx: ctx, Operation: operation},
+		"memcache":  GAEMemcache{Ctx: ctx, Operation: operation},
+		"":          GCPDatastore{Ctx: ctx, Operation: operation},
+	}
 
-	if err := datastore.Get(ctx, datastoreKey, &datastoreObject); err != nil {
-		log.Warningf(ctx, "datastore %s", err)
-		if err.Error() == "datastore: no such entity" {
-			datastoreObject.TargetLink = operation.TargetLink
-			datastoreObject.OperationType = operation.OperationType
-			datastoreObject.StartTime = operation.StartTime
-			datastoreObject.EndTime = operation.EndTime
-			if _, putErr := datastore.Put(ctx, datastoreKey, &datastoreObject); putErr != nil {
-				log.Errorf(ctx, "datastore %s", putErr)
-			}
-			newDatastore = true
+	databaseType := ""
+	for _, dbType := range []string{"datastore", "memcache"} {
+		if os.Getenv(`DATABASE`) == dbType {
+			databaseType = dbType
+			break
 		}
 	}
 
-	return
+	return dbMap[databaseType].getOrPut()
 }
