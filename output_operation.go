@@ -26,22 +26,17 @@ type OutputOperations struct {
 
 // GetGceUnkownAggregatedList get AggregatedList from API
 func (outO *OutputOperations) GetGceUnkownAggregatedList() {
-	var c = make(chan bool, len(outO.Projects))
+	var c = make(chan map[string][]*OutputOperation, len(outO.Projects))
 
 	for _, project := range outO.Projects {
-		go func(project string) {
-			aggregatedListTemp := gceUnkownAggregatedList(outO.Ctx, outO.ComputeService, project)
-
-			for key, value := range aggregatedListTemp {
-				log.Infof(outO.Ctx, "key: %s", key)
-				outO.Itmes[key] = append(outO.Itmes[key], value...)
-			}
-			c <- true
-		}(project)
+		go goGetOperation(outO, project, c)
 	}
 
 	for range outO.Projects {
-		<-c
+		for key, value := range <-c {
+			log.Infof(outO.Ctx, "key: %s", key)
+			outO.Itmes[key] = append(outO.Itmes[key], value...)
+		}
 	}
 }
 
@@ -65,21 +60,19 @@ func gceUnkownAggregatedList(ctx context.Context, computeService *compute.Servic
 	req = req.Filter(os.Getenv("OPERATION_FILTER"))
 
 	if err := req.Pages(ctx, func(page *compute.OperationAggregatedList) error {
-		var c = make(chan bool, len(page.Items))
+		var c = make(chan map[string][]*OutputOperation, len(page.Items))
 
 		for _, operationsScopedList := range page.Items {
-			go func(operationsScopedList compute.OperationsScopedList) {
-				lenOperationsScopedListOperations := len(operationsScopedList.Operations)
-
-				if lenOperationsScopedListOperations > 0 {
-					unkownAggregatedList = multiCheckOperation(ctx, lenOperationsScopedListOperations, operationsScopedList)
-				}
-				c <- true
-			}(operationsScopedList)
+			go goGceUnkownAggregatedList(ctx, operationsScopedList, c)
 		}
 
 		for range page.Items {
-			<-c
+			items := <-c
+			if len(items) > 0 {
+				for key, value := range items {
+					unkownAggregatedList[key] = append(unkownAggregatedList[key], value...)
+				}
+			}
 		}
 
 		return nil
@@ -91,22 +84,56 @@ func gceUnkownAggregatedList(ctx context.Context, computeService *compute.Servic
 
 func multiCheckOperation(ctx context.Context, arrayLen int, operationsScopedList compute.OperationsScopedList) (unkownAggregatedList map[string][]*OutputOperation) {
 	unkownAggregatedList = make(map[string][]*OutputOperation)
-	var c = make(chan bool, arrayLen)
+	var c = make(chan map[string][]*OutputOperation, arrayLen)
 
 	for _, operation := range operationsScopedList.Operations {
-		go func(operation *compute.Operation) {
-			log.Infof(ctx, "id: %d, target %s", operation.Id, operation.TargetLink)
-			isNew, outputOperation := getOrPut(ctx, operation)
-			if isNew {
-				unkownAggregatedList[operation.OperationType] = append(unkownAggregatedList[operation.OperationType], &outputOperation)
-			}
-			c <- true
-		}(operation)
+		go goMultiCheckOperation(ctx, operation, c)
 	}
+
 	for range operationsScopedList.Operations {
-		<-c
+		items := <-c
+		if len(items) > 0 {
+			for key, value := range items {
+				unkownAggregatedList[key] = append(unkownAggregatedList[key], value...)
+			}
+		}
 	}
 	return
+}
+
+func goGetOperation(outO *OutputOperations, project string, c chan map[string][]*OutputOperation) {
+	aggregatedListTemp := gceUnkownAggregatedList(outO.Ctx, outO.ComputeService, project)
+	items := make(map[string][]*OutputOperation)
+
+	for key, value := range aggregatedListTemp {
+		log.Infof(outO.Ctx, "key: %s", key)
+		items[key] = append(items[key], value...)
+	}
+	c <- items
+	return
+}
+
+func goMultiCheckOperation(ctx context.Context, operation *compute.Operation, c chan map[string][]*OutputOperation) {
+	items := make(map[string][]*OutputOperation)
+	log.Infof(ctx, "id: %d, target %s", operation.Id, operation.TargetLink)
+	isNew, outputOperation := getOrPut(ctx, operation)
+	if isNew {
+		items[operation.OperationType] = append(items[operation.OperationType], &outputOperation)
+	}
+	c <- items
+}
+
+func goGceUnkownAggregatedList(ctx context.Context, operationsScopedList compute.OperationsScopedList, c chan map[string][]*OutputOperation) {
+	items := make(map[string][]*OutputOperation)
+	lenOperationsScopedListOperations := len(operationsScopedList.Operations)
+
+	if lenOperationsScopedListOperations > 0 {
+		unkownAggregatedListTemp := multiCheckOperation(ctx, lenOperationsScopedListOperations, operationsScopedList)
+		for key, value := range unkownAggregatedListTemp {
+			items[key] = append(items[key], value...)
+		}
+	}
+	c <- items
 }
 
 func getOrPut(ctx context.Context, operation *compute.Operation) (bool, OutputOperation) {
