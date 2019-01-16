@@ -1,4 +1,4 @@
-package app
+package model
 
 import (
 	"context"
@@ -8,6 +8,11 @@ import (
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/memcache"
+)
+
+// GAEEntityKind is for GAE Entity kind
+const (
+	GAEEntityKind = "GCEOperations"
 )
 
 type database interface {

@@ -1,4 +1,4 @@
-package app
+package controller
 
 import (
 	"fmt"
@@ -6,13 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
-	compute "google.golang.org/api/compute/v1"
+	"github.com/CloudMile/gce_operations_notification/model"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/taskqueue"
-	"google.golang.org/appengine/urlfetch"
 )
 
 func errorHandler(w http.ResponseWriter, r *http.Request, status int) {
@@ -27,7 +24,8 @@ func errorHandler(w http.ResponseWriter, r *http.Request, status int) {
 	}
 }
 
-func operationHandle(w http.ResponseWriter, r *http.Request) {
+// OperationHandle is GET /cron/operations
+func OperationHandle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/cron/operations" {
 		errorHandler(w, r, http.StatusNotFound)
 		return
@@ -42,32 +40,25 @@ func operationHandle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func workHandle(w http.ResponseWriter, r *http.Request) {
+// WorkHandle is POST /cron/worker for queue
+func WorkHandle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/cron/worker" {
 		errorHandler(w, r, http.StatusNotFound)
 		return
 	}
 	ctx := appengine.NewContext(r)
-
-	client := &http.Client{
-		Transport: &oauth2.Transport{
-			Source: google.AppEngineTokenSource(ctx, compute.ComputeScope),
-			Base: &urlfetch.Transport{
-				Context: ctx,
-			},
-		},
+	cs := model.ComputeService{Ctx: ctx}
+	cs.Get()
+	if cs.Error != nil {
+		log.Errorf(ctx, "compute error: %s", cs.Error)
+		return
 	}
 
-	computeService, err := compute.New(client)
-	if err != nil {
-		log.Errorf(ctx, "compute error: %s", err)
-	}
-
-	outputOperations := OutputOperations{
+	outputOperations := model.OutputOperations{
 		Ctx:            ctx,
-		ComputeService: computeService,
+		ComputeService: cs.ComputeService,
 		Projects:       getProjectIDs(),
-		Itmes:          make(map[string][]*OutputOperation),
+		Itmes:          make(map[string][]*model.OutputOperation),
 	}
 	outputOperations.GetGceUnkownAggregatedList()
 	outputOperations.SendMail()
