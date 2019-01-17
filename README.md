@@ -15,7 +15,7 @@ Create a new project
 
 ## Setup IAM
 
-When enable GAE API, the GCP project will create a service account for GAE automatically. We have to add the service account as a memberto other project which we want to monitor the GCE instance operation events.
+When enable GAE API, the GCP project will create a service account for GAE automatically. We have to add the service account as a member to other project which we want to monitor the GCE instance operation events.
 
 1. Copy the GAE service account in `IAM & admin -> IAM` page.
 2. Add the GAE service account with `Compute Viewer` role in `IAM & admin -> IAM` page of the project which you want to monitor.
@@ -26,10 +26,10 @@ You can give the GAE service account with minimal permission `compute.globalOper
 
 - `app.yaml`
   - Replace `PROJECT_IDS` value to you want to monitor event, use comma to split prject ids.
-  - Replace `TO` value to who will be notified when event occur, use comma to split email addresses. 
+  - Replace `TO` value to who will be notified when event occur, use comma to split email addresses.
   - Replace `DATABASE` to you want to use, you can choes GCP `datastore` or GAE `memcache`
 - `cron.yaml`
-  - change schedule for Period
+  - change schedule for Period, default is 10mins
 
 ## Deploy
 
