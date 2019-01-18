@@ -29,7 +29,7 @@ You can give the GAE service account with minimal permission `compute.globalOper
   - Replace `TO` value to who will be notified when event occur, use comma to split email addresses.
   - Replace `DATABASE` to you want to use, you can choes GCP `datastore` or GAE `memcache`
 - `cron.yaml`
-  - change schedule for Period, default is 10mins
+  - change schedule for Period, default is 5 mins
 
 ## Deploy
 
