@@ -25,7 +25,7 @@ You can give the GAE service account with minimal permission `compute.globalOper
 ## Setup App
 
 - `app.yaml`
-  - Replace `PROJECT_IDS` value to you want to monitor event, use comma to split prject ids.
+  - Replace `PROJECT_IDS` value to you want to monitor event, use comma to split project ids.
   - Replace `TO` value to who will be notified when event occur, use comma to split email addresses.
   - Replace `DATABASE` to you want to use, you can choes GCP `datastore` or GAE `memcache`
 - `cron.yaml`
